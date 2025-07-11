@@ -1,0 +1,16 @@
+import VideoPlayer from './lib/VideoPlayer'
+import video from './assets/video.mp4'
+
+
+function App() {
+
+  return (
+    <div className="bg-gray-900 min-h-screen flex items-center justify-center">
+      <div className="w-full max-w-4xl mx-auto p-4">
+        <VideoPlayer src={video} poster="/assets/poster.png" />
+      </div>
+    </div>
+  )
+}
+
+export default App
