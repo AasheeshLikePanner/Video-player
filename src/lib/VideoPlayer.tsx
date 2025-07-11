@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { PlayIcon, PauseIcon, SpeakerWaveIcon, SpeakerXMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, Cog6ToothIcon } from '@heroicons/react/24/solid';
+import { PlayIcon, PauseIcon, SpeakerWaveIcon, SpeakerXMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, Cog6ToothIcon, ArrowUturnRightIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/solid';
+import {useVideoAudioBoost} from "@/hooks/useVideoAudioBoost";
+
+interface Quality {
+  name: string;
+  src: string;
+}
 
 interface VideoPlayerProps {
   src: string;
@@ -7,6 +13,7 @@ interface VideoPlayerProps {
   autoPlay?: boolean;
   muted?: boolean;
   theme?: 'dark' | 'light';
+  quality?: Quality[];
 }
 
 export default function VideoPlayer({
@@ -15,10 +22,13 @@ export default function VideoPlayer({
   autoPlay = false,
   theme = "dark",
   muted = false,
+  quality = [],
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const animationFrameRef = useRef<number>(0);
   const hoverTimeoutRef = useRef<number>(0);
 
@@ -33,6 +43,13 @@ export default function VideoPlayer({
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [currentQuality, setCurrentQuality] = useState(quality.length > 0 ? quality[0].src : src);
+  const [tooltipContent, setTooltipContent] = useState("");
+  const [tooltipPosition, setTooltipPosition] = useState(0);
+  const [showTooltip, setShowTooltip] = useState(false);
+  const [previewImage, setPreviewImage] = useState("");
+
+  useVideoAudioBoost(videoRef, volume);
 
   const handleProgress = useCallback(() => {
     const video = videoRef.current;
@@ -161,7 +178,6 @@ export default function VideoPlayer({
   const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newVolume = parseFloat(e.target.value);
     if (videoRef.current) {
-      videoRef.current.volume = newVolume;
       setVolume(newVolume);
       setIsMuted(newVolume === 0);
     }
@@ -216,7 +232,7 @@ export default function VideoPlayer({
         break;
       case 'ArrowUp': {
         e.preventDefault();
-        const newVolume = Math.min(video.volume + 0.1, 1);
+        const newVolume = Math.min(video.volume + 0.1, 5);
         video.volume = newVolume;
         setVolume(newVolume);
         break;
@@ -250,6 +266,84 @@ export default function VideoPlayer({
     }, 2000);
   }, []);
 
+  const handleVideoForward = () => {
+    const video = videoRef?.current;
+    if (!video) return;
+    video.currentTime = Math.min(video.currentTime + 5, duration);
+
+  }
+  const handleVideoBackword = () => {
+    const video = videoRef?.current;
+    if (!video) return;
+    video.currentTime = Math.max(video.currentTime - 5, 0);
+
+  }
+
+  const generatePreview = useCallback((hoverTime: number) => {
+    const previewVideo = previewVideoRef.current;
+    if (!previewVideo) return;
+
+    previewVideo.currentTime = hoverTime;
+    previewVideo.onseeked = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = previewVideo.videoWidth;
+      canvas.height = previewVideo.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(previewVideo, 0, 0, canvas.width, canvas.height);
+        setPreviewImage(canvas.toDataURL());
+      }
+    };
+  }, []);
+
+  const handleMouseMoveOnProgress = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!duration || !progressBarRef.current) return;
+    const progressRect = progressBarRef.current.getBoundingClientRect();
+    const x = e.clientX - progressRect.left;
+
+    const percentage = Math.min(Math.max(x / progressRect.width, 0), 1);
+    const hoverTime = percentage * duration;
+
+    setTooltipContent(formatTime(hoverTime));
+    generatePreview(hoverTime);
+
+    const tooltipEl = tooltipRef.current;
+    const tooltipWidth = tooltipEl ? tooltipEl.offsetWidth : 160; // Estimate width
+    const progressWidth = progressRect.width;
+
+    let newLeft = x - tooltipWidth / 2;
+
+    if (newLeft < 0) {
+      newLeft = 0;
+    }
+    if (newLeft + tooltipWidth > progressWidth) {
+      newLeft = progressWidth - tooltipWidth;
+    }
+
+    setTooltipPosition(newLeft);
+    setShowTooltip(true);
+  }, [duration, generatePreview]);
+
+  const handleMouseLeaveOnProgress = useCallback(() => {
+    setShowTooltip(false);
+    setPreviewImage("");
+  }, []);
+
+  const handleQualityChange = (newSrc: string) => {
+    if (videoRef.current) {
+      const wasPlaying = playing;
+      const oldTime = videoRef.current.currentTime;
+      setCurrentQuality(newSrc);
+      videoRef.current.src = newSrc;
+      videoRef.current.load();
+      videoRef.current.currentTime = oldTime;
+      if (wasPlaying) {
+        videoRef.current.play();
+      }
+      setPlaying(wasPlaying);
+    }
+  };
+
   return (
     <div
       ref={playerContainerRef}
@@ -262,17 +356,20 @@ export default function VideoPlayer({
     >
       <video
         ref={videoRef}
-        src={src}
+        src={currentQuality}
         poster={poster}
         autoPlay={autoPlay}
         muted={muted}
-        className={`w-full h-full object-cover rounded-2xl`}
+        className={`w-full h-full object-cover rounded-2xl ${isHovered ? `opacity-70` : `opacity-100`}`}
         onClick={handleVideoPlayback}
         onDoubleClick={toggleFullscreen}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
       >
       </video>
-      {/* Overlay for controls */}
+      <video ref={previewVideoRef} src={src} className="absolute select-none -top-[9999px] -left-[9999px]" muted preload="auto" />
 
+      {/* Overlay for controls */}
       <div
         className={`absolute inset-0 flex flex-col justify-between p-4 transition-opacity duration-300 ${isHovered || !playing || isDragging ? 'opacity-100' : 'opacity-0'}`}
       >
@@ -281,65 +378,81 @@ export default function VideoPlayer({
 
         {/* Control Bar at the bottom */}
         <div className="w-full bg-opacity-40 backdrop-blur-md rounded-xl p-3 flex flex-col items-center space-x-3">
-            <div className="w-full">
+          <div className="w-full">
             {/* Progress Bar */}
             <div
               ref={progressBarRef}
-              className="relative flex items-center w-full cursor-pointer h-6"
+              className="relative w-full cursor-pointer h-6"
               onClick={handleProgressClick}
               onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMoveOnProgress}
+              onMouseLeave={handleMouseLeaveOnProgress}
             >
+              {showTooltip && (
+                <div
+                  ref={tooltipRef}
+                  draggable={false}
+                  className="select-none absolute bottom-full p-1 bg-black text-white text-xs rounded-xl flex flex-col items-center"
+                  style={{
+                    left: `${tooltipPosition}px`,
+                  }}
+                >
+                  {previewImage && <img draggable={false} src={previewImage} alt="preview" className="select-none rounded-xl w-52 h-auto mb-1" />}
+                  {tooltipContent}
+                </div>
+              )}
+
+              {/* Track - full width */}
+              <div className="absolute top-1/2 -translate-y-1/2 w-full h-1  bg-opacity-30 rounded-full"></div>
+
               {/* Buffered Bar */}
               <div
-                className="bg-white bg-opacity-30 h-1 rounded-full absolute"
+                className="absolute top-1/2 -translate-y-1/2 h-1 bg-white bg-opacity-40 rounded-full"
                 style={{
                   width: duration ? `${(buffered / duration) * 100}%` : '0%',
                   transition: 'width 0.2s linear',
                 }}
               ></div>
+
               {/* Progress Bar Left (before thumb) */}
               <div
-              className="bg-white bg-opacity-60 h-1 rounded-full"
-              style={{
-                width: duration ? `calc(${(currentTime / duration) * 100}% - 8px)` : '0%',
-                minWidth: 0,
-                marginRight: '4px',
-                transition: isDragging ? 'none' : 'width 0.1s linear',
-              }}
-              ></div>
-              {/* Small gap before thumb */}
-              <div style={{ width: '4px' }}></div>
-              {/* Thumb as vertical line */}
-              <div
-              className="z-10 flex items-center justify-center"
-              style={{
-                width: '8px',
-                height: '100%', // Make thumb take full height of parent
-                pointerEvents: 'none',
-              }}
-              >
-              {/* Change the height here */}
-              <div
-                className="w-1 bg-white rounded-full shadow-lg"
+                className="absolute top-1/2 -translate-y-1/2 h-1 bg-white bg-opacity-60 rounded-full"
                 style={{
-                height: '27px', // Set your desired thumb height here
+                  width: duration ? `calc(${(currentTime / duration) * 100}% - 14px)` : '0%', // 14px = half thumb width (4px) + gap (10px)
                 }}
               ></div>
-              </div>
-              {/* Small gap after thumb */}
               <div style={{ width: '4px' }}></div>
+              {/* Thumb */}
+              <div
+                className="absolute z-10 flex items-center justify-center"
+                style={{
+                  left: duration ? `${(currentTime / duration) * 100}%` : '0%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)', // Center the thumb
+                  width: '8px',
+                  height: '100%',
+                  pointerEvents: 'none',
+                }}
+              >
+                <div
+                  className="w-1 bg-white rounded-full shadow-lg"
+                  style={{
+                    height: '27px',
+                  }}
+                ></div>
+              </div>
+              <div style={{ width: '4px' }}></div>
+
               {/* Progress Bar Right (after thumb) */}
               <div
-              className="bg-white bg-opacity-30 h-1 rounded-full flex-1"
-              style={{
-                width: duration ? `calc(100% - ${(currentTime / duration) * 100}% - 8px)` : '100%',
-                minWidth: 0,
-                marginLeft: '4px',
-                transition: isDragging ? 'none' : 'width 0.1s linear',
-              }}
+                className="absolute top-1/2 -translate-y-1/2 h-1 bg-white bg-opacity-30 rounded-full"
+                style={{
+                  left: duration ? `calc(${(currentTime / duration) * 100}% + 14px)` : '0%', // 14px = half thumb width (4px) + gap (10px)
+                  right: '0%',
+                }}
               ></div>
             </div>
-            </div>
+          </div>
 
 
           <div className="flex w-full p-3 items-center gap-10">
@@ -354,15 +467,34 @@ export default function VideoPlayer({
               </div>
             </button>
 
-            <div className="bg-[#131313] pl-2 pr-2 rounded-lg">
+            <div className="bg-[#131313] p-4 rounded-lg flex items-center">
+
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={handleVideoBackword}
+                  className={`flex justify-center items-center  rounded-3xl  text-white hover:bg-white hover:text-black`}
+                >
+                  <div className="h-6 w-6">
+                    <ArrowUturnLeftIcon />
+                  </div>
+                </button>
+                <button
+                  onClick={handleVideoForward}
+                  className={` flex justify-center items-center  rounded-3xl  text-white hover:bg-white hover:text-black`}
+                >
+                  <div className="h-6 w-6">
+                    <ArrowUturnRightIcon />
+                  </div>
+                </button>
+              </div>
+
               {/* Current Time */}
-              <span className="select-none text-white text-sm font-medium">
+              <span className="select-none text-white text-sm font-medium ml-2">
                 {formatTime(currentTime)} /
               </span>
 
-
               {/* Duration */}
-              <span className="select-none text-white text-sm font-medium">
+              <span className="select-none text-white text-sm font-medium ml-1">
                 {formatTime(duration)}
               </span>
             </div>
@@ -376,8 +508,8 @@ export default function VideoPlayer({
             <input
               type="range"
               min="0"
-              max="1"
-              step="0.01"
+              max="5"
+              step="0.1"
               value={isMuted ? 0 : volume}
               onChange={handleVolumeChange}
               className="w-20 h-1.5 appearance-none rounded-full bg-white bg-opacity-30 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:shadow-lg cursor-pointer"
@@ -390,16 +522,25 @@ export default function VideoPlayer({
                 </div>
               </button>
               <div className={`absolute bottom-full right-0 bg-black bg-opacity-70 backdrop-blur-md rounded-lg p-2 space-y-2 transition-opacity duration-300 ${showSettings ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-                  <div className="text-white text-sm">Playback Speed</div>
-                  {[0.5, 1, 1.5, 2].map(rate => (
-                    <button
-                      key={rate}
-                      onClick={() => setPlaybackRate(rate)}
-                      className={`w-full text-left text-sm text-white ${playbackRate === rate ? 'font-bold' : ''}`}>
-                      {rate}x
-                    </button>
-                  ))}
-                </div>
+                <div className="text-white text-sm">Playback Speed</div>
+                {[0.5, 1, 1.5, 2].map(rate => (
+                  <button
+                    key={rate}
+                    onClick={() => setPlaybackRate(rate)}
+                    className={`w-full text-left text-sm text-white ${playbackRate === rate ? 'font-bold' : ''}`}>
+                    {rate}x
+                  </button>
+                ))}
+                {quality.length > 0 && <div className="text-white text-sm">Quality</div>}
+                {quality.map(q => (
+                  <button
+                    key={q.name}
+                    onClick={() => handleQualityChange(q.src)}
+                    className={`w-full text-left text-sm text-white ${currentQuality === q.src ? 'font-bold' : ''}`}>
+                    {q.name}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* Fullscreen Button */}
@@ -414,5 +555,10 @@ export default function VideoPlayer({
     </div>
   );
 }
+
+
+
+
+
 
 
