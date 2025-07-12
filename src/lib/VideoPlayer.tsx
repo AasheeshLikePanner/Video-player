@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { PlayIcon, PauseIcon, SpeakerWaveIcon, SpeakerXMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, Cog6ToothIcon, ArrowUturnRightIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/solid';
-import {useVideoAudioBoost} from "@/hooks/useVideoAudioBoost";
+import { useVideoAudioBoost } from "@/hooks/useVideoAudioBoost";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Slider } from "@/components/ui/slider";
 
 interface Quality {
   name: string;
@@ -172,8 +174,8 @@ export default function VideoPlayer({
     setIsDragging(false);
   }, []);
 
-  const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newVolume = parseFloat(e.target.value);
+  const handleVolumeChange = useCallback((value: number[]) => {
+    const newVolume = value[0];
     if (videoRef.current) {
       setVolume(newVolume);
       setIsMuted(newVolume === 0);
@@ -229,7 +231,7 @@ export default function VideoPlayer({
         break;
       case 'ArrowUp': {
         e.preventDefault();
-        const newVolume = Math.min(video.volume + 0.1, 5);
+        const newVolume = Math.min(video.volume + 0.1, 3);
         video.volume = newVolume;
         setVolume(newVolume);
         break;
@@ -491,56 +493,110 @@ export default function VideoPlayer({
               </span>
             </div>
 
-            {/* Volume Control */}
-            <button onClick={toggleMute} className="text-white">
-              <div className="h-6 w-6">
-                {isMuted || volume === 0 ? <SpeakerXMarkIcon /> : <SpeakerWaveIcon />}
-              </div>
-            </button>
-            <input
-              type="range"
-              min="0"
-              max="5"
-              step="0.1"
-              value={isMuted ? 0 : volume}
-              onChange={handleVolumeChange}
-              className="w-20 h-1.5 appearance-none rounded-full bg-white bg-opacity-30 [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:shadow-lg cursor-pointer"
-            />
+            <div className="flex items-center gap-2 ml-auto p-2 rounded-lg" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }}>
+              {/* Volume Control */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button onClick={toggleMute} className="text-white p-2 rounded-lg hover:bg-white/10 transition-colors">
+                    <div className="h-6 w-6">
+                      {isMuted || volume === 0 ? <SpeakerXMarkIcon /> : <SpeakerWaveIcon />}
+                    </div>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" className="w-auto bg-transparent border-none shadow-none mb-2">
+                  <div className="h-16 w-40 bg-[#131313] rounded-lg p-4 flex items-center justify-center">
+                    <div
+                      className="relative w-full cursor-pointer h-6"
+                      onMouseDown={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const clickX = e.clientX - rect.left;
+                        const newVolume = (clickX / rect.width) * 3;
+                        handleVolumeChange([newVolume]);
+                      }}
+                    >
+                      <div className="absolute top-1/2 -translate-y-1/2 w-full h-1 bg-white/20 rounded-full">
+                        <div
+                          className="absolute top-0 left-0 h-full bg-white rounded-full"
+                          style={{ width: `calc(${(volume / 3) * 100}% - 8px)` }}
+                        ></div>
+                      </div>
+                      <div
+                        className="absolute z-20 flex items-center justify-center"
+                        style={{
+                          left: `${(volume / 3) * 100}%`,
+                          top: '50%',
+                          transform: 'translate(-50%, -50%)', 
+                          width: '8px',
+                          height: '100%',
+                          pointerEvents: 'none',
+                        }}
+                      >
+                        <div
+                          className="w-2 bg-white rounded-full shadow-lg"
+                          style={{
+                            height: '27px',
+                          }}
+                        ></div>
+                      </div>
+                      <div
+                        className="absolute top-1/2 -translate-y-1/2 h-1 bg-gray-400 rounded-full z-10"
+                        style={{
+                          left: `calc(${(volume / 3) * 100}% + 8px)`,
+                          right: '0%',
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                </PopoverContent>
+              </Popover>
 
-            <div className="relative ml-auto">
-              <button onClick={() => setShowSettings(s => !s)} className="text-white">
+              {/* Settings Popover */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button className="text-white p-2 rounded-lg hover:bg-white/10 transition-colors">
+                    <div className="h-6 w-6">
+                      <Cog6ToothIcon />
+                    </div>
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="top" className="w-auto bg-transparent border-none shadow-none p-0 mb-2">
+                  <div className="bg-[#131313] rounded-lg p-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      {[0.5, 1, 1.5, 2].map(rate => (
+                        <button
+                          key={rate}
+                          onClick={() => setPlaybackRate(rate)}
+                          className={`w-full text-center text-sm p-2 rounded-md transition-colors ${playbackRate === rate ? 'bg-white/20' : 'text-white hover:bg-white/10'}`}>
+                          {rate}x
+                        </button>
+                      ))}
+                    </div>
+                    {quality.length > 0 && (
+                      <>
+                        <div className="h-px bg-white/10 my-2" />
+                        <div className="flex flex-col gap-1">
+                          {quality.map(q => (
+                            <button
+                              key={q.name}
+                              onClick={() => handleQualityChange(q.src)}
+                              className={`w-full text-left text-sm px-3 py-1 rounded-md transition-colors ${currentQuality === q.src ? 'bg-white/20' : 'text-white hover:bg-white/10'}`}>
+                              {q.name}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Fullscreen Button */}
+              <button onClick={toggleFullscreen} className="text-white p-2 rounded-lg hover:bg-white/10 transition-colors">
                 <div className="h-6 w-6">
-                  <Cog6ToothIcon />
+                  {isFullScreen ? <ArrowsPointingInIcon /> : <ArrowsPointingOutIcon />}
                 </div>
               </button>
-              <div className={`absolute bottom-full right-0 bg-black bg-opacity-70 backdrop-blur-md rounded-lg p-2 space-y-2 transition-opacity duration-300 ${showSettings ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
-                <div className="text-white text-sm">Playback Speed</div>
-                {[0.5, 1, 1.5, 2].map(rate => (
-                  <button
-                    key={rate}
-                    onClick={() => setPlaybackRate(rate)}
-                    className={`w-full text-left text-sm text-white ${playbackRate === rate ? 'font-bold' : ''}`}>
-                    {rate}x
-                  </button>
-                ))}
-                {quality.length > 0 && <div className="text-white text-sm">Quality</div>}
-                {quality.map(q => (
-                  <button
-                    key={q.name}
-                    onClick={() => handleQualityChange(q.src)}
-                    className={`w-full text-left text-sm text-white ${currentQuality === q.src ? 'font-bold' : ''}`}>
-                    {q.name}
-                  </button>
-                ))}
-              </div>
             </div>
-
-            {/* Fullscreen Button */}
-            <button onClick={toggleFullscreen} className="text-white">
-              <div className="h-6 w-6">
-                {isFullScreen ? <ArrowsPointingInIcon /> : <ArrowsPointingOutIcon />}
-              </div>
-            </button>
           </div>
         </div>
       </div>
