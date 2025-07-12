@@ -13,6 +13,7 @@ interface VideoPlayerProps {
   autoPlay?: boolean;
   muted?: boolean;
   quality?: Quality[];
+  controls?: boolean; // New prop for controlling custom controls visibility
 }
 
 export default function VideoPlayer({
@@ -21,6 +22,7 @@ export default function VideoPlayer({
   autoPlay = false,
   muted = false,
   quality = [],
+  controls = true, // Default to true
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -39,9 +41,11 @@ export default function VideoPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(muted);
-  const [isHovered, setIsHovered] = useState(false);
+  const [showControlsOverlay, setShowControlsOverlay] = useState(false);
+  const [isMouseOverPlayer, setIsMouseOverPlayer] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [hasPlayed, setHasPlayed] = useState(false); // New state to track if video has played
   
   const [playbackRate, setPlaybackRate] = useState(1);
   const [currentQuality, setCurrentQuality] = useState(quality.length > 0 ? quality[0].src : src);
@@ -131,7 +135,10 @@ export default function VideoPlayer({
 
   const handleVideoPlayback = useCallback(() => {
     setPlaying(p => !p);
-  }, []);
+    if (!hasPlayed) {
+      setHasPlayed(true);
+    }
+  }, [hasPlayed]);
 
   const formatTime = (time: number) => {
     const minutes = Math.floor(time / 60);
@@ -154,7 +161,7 @@ export default function VideoPlayer({
     handleProgressClick(e);
   }, [handleProgressClick]);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+  const handleProgressBarDrag = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (isDragging && progressBarRef.current && videoRef.current) {
       const rect = progressBarRef.current.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
@@ -176,7 +183,7 @@ export default function VideoPlayer({
     }
   }, [isDragging, duration]);
 
-  const handleMouseUp = useCallback(() => {
+  const handleProgressBarMouseUp = useCallback(() => {
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
     }
@@ -275,15 +282,33 @@ export default function VideoPlayer({
     };
   }, [handleKeyDown]);
 
-  const handleMouseEnter = useCallback(() => {
+  const handlePlayerMouseMove = useCallback(() => {
     clearTimeout(hoverTimeoutRef.current);
-    setIsHovered(true);
-  }, []);
+    setShowControlsOverlay(true);
+    hoverTimeoutRef.current = window.setTimeout(() => {
+      if (!isMouseOverPlayer && !isDragging) {
+        setShowControlsOverlay(false);
+      }
+    }, 3000);
+  }, [isMouseOverPlayer, isDragging]);
 
   const handleMouseLeave = useCallback(() => {
-    hoverTimeoutRef.current = window.setTimeout(() => {
-      setIsHovered(false);
-    }, 2000);
+    setIsMouseOverPlayer(false);
+    if (playing && !isDragging) {
+      hoverTimeoutRef.current = window.setTimeout(() => {
+        setShowControlsOverlay(false);
+      }, 1000);
+    } else if (!playing && !isDragging) {
+      hoverTimeoutRef.current = window.setTimeout(() => {
+        setShowControlsOverlay(false);
+      }, 3000);
+    }
+  }, [playing, isDragging]);
+
+  const handleMouseEnter = useCallback(() => {
+    setIsMouseOverPlayer(true);
+    setShowControlsOverlay(true);
+    clearTimeout(hoverTimeoutRef.current);
   }, []);
 
   const handleVideoForward = () => {
@@ -346,7 +371,9 @@ export default function VideoPlayer({
   const handleMouseLeaveOnProgress = useCallback(() => {
     setShowTooltip(false);
     setPreviewImage("");
-  }, []);
+    // Trigger the main player container's mouse leave logic
+    handleMouseLeave();
+  }, [handleMouseLeave]);
 
   const handleQualityChange = (newSrc: string) => {
     if (videoRef.current) {
@@ -442,16 +469,16 @@ export default function VideoPlayer({
       tabIndex={0}
       className={`relative w-full h-full overflow-hidden rounded-2xl shadow-lg bg-background focus:outline-none`}
       onMouseEnter={handleMouseEnter}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
+      onMouseMove={handlePlayerMouseMove}
+      onMouseUp={handleProgressBarMouseUp}
     >
       <video
         ref={videoRef}
         src={currentQuality}
-        poster={poster}
+        poster={hasPlayed ? "" : poster}
         autoPlay={autoPlay}
         muted={muted}
-        className={`w-full h-full object-cover rounded-2xl ${isHovered ? `opacity-70` : `opacity-100`} ${isLoading ? '' : ''}`}
+        className={`w-full h-full object-cover rounded-2xl ${showControlsOverlay ? `opacity-70` : `opacity-100`} ${isLoading ? '' : ''}`}
         onClick={handleVideoPlayback}
         onDoubleClick={toggleFullscreen}
         onPlay={() => setPlaying(true)}
@@ -598,140 +625,142 @@ export default function VideoPlayer({
       )}
 
       {/* Overlay for controls */}
-      <div
-        className={`absolute inset-0 flex flex-col justify-between ps-4 pr-4 transition-opacity duration-300 ${isHovered || !playing || isDragging ? 'opacity-100' : 'opacity-0'}`}
-      >
-        <div className="flex-grow" />
+      {controls && (
+        <div
+          className={`absolute inset-0 flex flex-col justify-between ps-4 pr-4 transition-opacity duration-300 ${showControlsOverlay || !playing || isDragging ? 'opacity-100' : 'opacity-0'}`}
+        >
+          <div className="flex-grow" />
 
-        {/* Control Bar at the bottom */}
-        <div className="w-full rounded-xl p-3 flex flex-col items-center space-x-3 z-50">
-          <div className="w-full">
-            {/* Progress Bar */}
-            <div
-              ref={progressBarRef}
-              className="relative w-full cursor-pointer h-6"
-              onClick={handleProgressClick}
-              onMouseDown={handleMouseDown}
-              onMouseMove={handleMouseMoveOnProgress}
-              onMouseLeave={handleMouseLeaveOnProgress}
-            >
-              {showTooltip && (
-                <div
-                  ref={tooltipRef}
-                  draggable={false}
-                  className="select-none absolute bottom-full p-1 bg-card text-card-foreground text-xs rounded-xl flex flex-col items-center"
-                  style={{ left: `${tooltipPosition}px` }}
-                >
-                  {previewImage && <img draggable={false} src={previewImage} alt="preview" className="select-none rounded-xl w-52 h-auto mb-1" />}
-                  {tooltipContent}
-                </div>
-              )}
-
-              <div className="absolute top-1/2 -translate-y-1/2 w-full h-1 bg-opacity-30 rounded-full" />
+          {/* Control Bar at the bottom */}
+          <div className="w-full rounded-xl p-3 flex flex-col items-center space-x-3 z-50">
+            <div className="w-full">
+              {/* Progress Bar */}
               <div
-                className="absolute top-1/2 -translate-y-1/2 h-1 bg-primary rounded-full z-10"
-                style={{
-                  width: duration ? `calc(${(currentTime / duration) * 100}% - 9px)` : '0%',
-                }}
-              />
-              <div
-                className="absolute z-10 flex items-center justify-center"
-                style={{
-                  left: duration ? `${(currentTime / duration) * 100}%` : '0%',
-                  top: '50%',
-                  transform: 'translate(-50%, -50%)',
-                  width: '4px',
-                  height: '100%',
-                  pointerEvents: 'none',
-                }}
+                ref={progressBarRef}
+                className="relative w-full cursor-pointer h-6"
+                onClick={handleProgressClick}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMoveOnProgress}
+                onMouseLeave={handleMouseLeaveOnProgress}
               >
+                {showTooltip && (
+                  <div
+                    ref={tooltipRef}
+                    draggable={false}
+                    className="select-none absolute bottom-full p-1 bg-card text-card-foreground text-xs rounded-xl flex flex-col items-center"
+                    style={{ left: `${tooltipPosition}px` }}
+                  >
+                    {previewImage && <img draggable={false} src={previewImage} alt="preview" className="select-none rounded-xl w-52 h-auto mb-1" />}
+                    {tooltipContent}
+                  </div>
+                )}
+
+                <div className="absolute top-1/2 -translate-y-1/2 w-full h-1 bg-opacity-30 rounded-full" />
                 <div
-                  className="w-2 bg-primary rounded-full shadow-lg"
-                  style={{ height: '27px' }}
+                  className="absolute top-1/2 -translate-y-1/2 h-1 bg-primary rounded-full z-10"
+                  style={{
+                    width: duration ? `calc(${(currentTime / duration) * 100}% - 9px)` : '0%',
+                  }}
+                />
+                <div
+                  className="absolute z-10 flex items-center justify-center"
+                  style={{
+                    left: duration ? `${(currentTime / duration) * 100}%` : '0%',
+                    top: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '4px',
+                    height: '100%',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <div
+                    className="w-2 bg-primary rounded-full shadow-lg"
+                    style={{ height: '27px' }}
+                  />
+                </div>
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 h-1 bg-gray-500 rounded-full z-10"
+                  style={{
+                    left: duration ? `calc(${(currentTime / duration) * 100}% + 9px)` : '0%',
+                    right: '0%',
+                  }}
                 />
               </div>
-              <div
-                className="absolute top-1/2 -translate-y-1/2 h-1 bg-gray-500 rounded-full z-10"
-                style={{
-                  left: duration ? `calc(${(currentTime / duration) * 100}% + 9px)` : '0%',
-                  right: '0%',
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="flex w-full p-3 items-center gap-10">
-            <button
-              onClick={handleVideoPlayback}
-              className={`p-5 w-30 flex justify-center items-center ${playing ? 'bg-card/20 backdrop-blur-xl rounded-3xl' : 'bg-primary rounded-full'}`}
-            >
-              <div className="h-6 w-6 text-primary-foreground">
-                {playing ? <PauseIcon fill="white" /> : <PlayIcon fill="black" />}
-              </div>
-            </button>
-
-            <div className="bg-card/20 backdrop-blur-xl p-4 rounded-lg flex items-center">
-              <div className="flex items-center gap-4">
-                <button
-                  onClick={handleVideoBackword}
-                  className="flex justify-center items-center rounded-3xl text-white hover:bg-primary hover:text-black"
-                >
-                  <div className="h-6 w-6">
-                    <ArrowUturnLeftIcon />
-                  </div>
-                </button>
-                <button
-                  onClick={handleVideoForward}
-                  className="flex justify-center text-white items-center rounded-3xl hover:bg-primary hover:text-black"
-                >
-                  <div className="h-6 w-6">
-                    <ArrowUturnRightIcon />
-                  </div>
-                </button>
-              </div>
-
-              <span className="select-none text-white text-sm font-medium ml-2">
-                {formatTime(currentTime)} /
-              </span>
-              <span className="select-none text-white text-sm font-medium ml-1">
-                {formatTime(duration)}
-              </span>
             </div>
 
-            <div className="flex items-center bg-card/20 backdrop-blur-xl gap-2 ml-auto p-2 rounded-lg">
-              {/* Volume Control - WITH PROPER HOVER HANDLING */}
-              <button 
-                ref={volumeButtonRef}
-                onClick={toggleMute} 
-                className="text-primary-foreground p-2 rounded-lg hover:bg-primary/20 transition-colors"
-                onMouseEnter={() => handleVolumeHover(true)}
-                onMouseLeave={() => handleVolumeHover(false)}
+            <div className="flex w-full p-3 items-center gap-10">
+              <button
+                onClick={handleVideoPlayback}
+                className={`p-5 w-30 flex justify-center items-center ${playing ? 'bg-card/20 backdrop-blur-xl rounded-3xl' : 'bg-primary rounded-full'}`}
               >
                 <div className="h-6 w-6 text-primary-foreground">
-                  {isMuted || volume === 0 ? <SpeakerXMarkIcon fill="white" /> : <SpeakerWaveIcon fill="white" />}
+                  {playing ? <PauseIcon fill="white" /> : <PlayIcon fill="black" />}
                 </div>
               </button>
 
-              {/* Settings and Fullscreen remain the same */}
-              <button 
-                ref={settingsButtonRef}
-                onClick={handleSettingsClick}
-                className="text-primary-foreground p-2 rounded-lg hover:bg-primary/20 transition-colors relative"
-              >
-                <div className="h-6 w-6 text-primary-foreground">
-                  <Cog6ToothIcon fill="white" />
+              <div className="bg-card/20 backdrop-blur-xl p-4 rounded-lg flex items-center">
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={handleVideoBackword}
+                    className="flex justify-center items-center rounded-3xl text-white hover:bg-primary hover:text-black"
+                  >
+                    <div className="h-6 w-6">
+                      <ArrowUturnLeftIcon />
+                    </div>
+                  </button>
+                  <button
+                    onClick={handleVideoForward}
+                    className="flex justify-center text-white items-center rounded-3xl hover:bg-primary hover:text-black"
+                  >
+                    <div className="h-6 w-6">
+                      <ArrowUturnRightIcon />
+                    </div>
+                  </button>
                 </div>
-              </button>
 
-              <button onClick={toggleFullscreen} className="text-primary-foreground p-2 rounded-lg hover:bg-primary/20 transition-colors">
-                <div className="h-6 w-6 text-primary-foreground">
-                  {isFullScreen ? <ArrowsPointingInIcon fill="white" /> : <ArrowsPointingOutIcon fill="white" />}
-                </div>
-              </button>
+                <span className="select-none text-white text-sm font-medium ml-2">
+                  {formatTime(currentTime)} /
+                </span>
+                <span className="select-none text-white text-sm font-medium ml-1">
+                  {formatTime(duration)}
+                </span>
+              </div>
+
+              <div className="flex items-center bg-card/20 backdrop-blur-xl gap-2 ml-auto p-2 rounded-lg">
+                {/* Volume Control - WITH PROPER HOVER HANDLING */}
+                <button 
+                  ref={volumeButtonRef}
+                  onClick={toggleMute} 
+                  className="text-primary-foreground p-2 rounded-lg hover:bg-primary/20 transition-colors"
+                  onMouseEnter={() => handleVolumeHover(true)}
+                  onMouseLeave={() => handleVolumeHover(false)}
+                >
+                  <div className="h-6 w-6 text-primary-foreground">
+                    {isMuted || volume === 0 ? <SpeakerXMarkIcon fill="white" /> : <SpeakerWaveIcon fill="white" />}
+                  </div>
+                </button>
+
+                {/* Settings and Fullscreen remain the same */}
+                <button 
+                  ref={settingsButtonRef}
+                  onClick={handleSettingsClick}
+                  className="text-primary-foreground p-2 rounded-lg hover:bg-primary/20 transition-colors relative"
+                >
+                  <div className="h-6 w-6 text-primary-foreground">
+                    <Cog6ToothIcon fill="white" />
+                  </div>
+                </button>
+
+                <button onClick={toggleFullscreen} className="text-primary-foreground p-2 rounded-lg hover:bg-primary/20 transition-colors">
+                  <div className="h-6 w-6 text-primary-foreground">
+                    {isFullScreen ? <ArrowsPointingInIcon fill="white" /> : <ArrowsPointingOutIcon fill="white" />}
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
