@@ -32,5 +32,5 @@ export function useVideoAudioBoost(
     }
 
     gainNodeRef.current.gain.value = Math.min(boostLevel, 2);
-  }, [videoRef.current, boostLevel]);
+  }, [videoRef, boostLevel]);
 }

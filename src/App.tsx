@@ -1,5 +1,5 @@
 import VideoPlayer from './lib/VideoPlayer'
-
+import video from './assets/video.mp4'
 
 
 function App() {

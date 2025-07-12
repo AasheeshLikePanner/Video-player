@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { PlayIcon, PauseIcon, SpeakerWaveIcon, SpeakerXMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, Cog6ToothIcon, ArrowUturnRightIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/solid';
 import { useVideoAudioBoost } from "@/hooks/useVideoAudioBoost";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-
 
 interface Quality {
   name: string;
@@ -14,7 +12,6 @@ interface VideoPlayerProps {
   poster?: string;
   autoPlay?: boolean;
   muted?: boolean;
-  theme?: 'dark' | 'light';
   quality?: Quality[];
 }
 
@@ -22,7 +19,6 @@ export default function VideoPlayer({
   src,
   poster,
   autoPlay = false,
-  theme = "dark",
   muted = false,
   quality = [],
 }: VideoPlayerProps) {
@@ -31,8 +27,12 @@ export default function VideoPlayer({
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const volumeButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const settingsMenuRef = useRef<HTMLDivElement>(null); // New ref for the settings menu
   const animationFrameRef = useRef<number>(0);
   const hoverTimeoutRef = useRef<number>(0);
+  const volumeHoverTimeoutRef = useRef<number>(0); // Added for volume hover delay
 
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -50,9 +50,14 @@ export default function VideoPlayer({
   const [showTooltip, setShowTooltip] = useState(false);
   const [previewImage, setPreviewImage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isVideoReady, setIsVideoReady] = useState(false);
 
   const [isVolumeHovered, setIsVolumeHovered] = useState(false);
   const [isVolumeDragging, setIsVolumeDragging] = useState(false);
+  const [volumeSliderPosition, setVolumeSliderPosition] = useState({ x: 0, y: 0 });
+  
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsPosition, setSettingsPosition] = useState({ x: 0, y: 0 });
 
   useVideoAudioBoost(videoRef, volume);
 
@@ -64,6 +69,7 @@ export default function VideoPlayer({
       setDuration(video.duration);
       video.volume = volume;
       video.muted = isMuted;
+      setIsVideoReady(true);
     };
 
     const handleTimeUpdate = () => {
@@ -182,6 +188,7 @@ export default function VideoPlayer({
       const newVolume = Math.min(Math.max(value, 0), 2);
       setVolume(newVolume);
       setIsMuted(newVolume === 0);
+      // videoRef.current.volume = newVolume;
     }
   }, []);
 
@@ -283,13 +290,12 @@ export default function VideoPlayer({
     const video = videoRef?.current;
     if (!video) return;
     video.currentTime = Math.min(video.currentTime + 5, duration);
-
   }
+
   const handleVideoBackword = () => {
     const video = videoRef?.current;
     if (!video) return;
     video.currentTime = Math.max(video.currentTime - 5, 0);
-
   }
 
   const generatePreview = useCallback((hoverTime: number) => {
@@ -321,7 +327,7 @@ export default function VideoPlayer({
     generatePreview(hoverTime);
 
     const tooltipEl = tooltipRef.current;
-    const tooltipWidth = tooltipEl ? tooltipEl.offsetWidth : 160; // Estimate width
+    const tooltipWidth = tooltipEl ? tooltipEl.offsetWidth : 160;
     const progressWidth = progressRect.width;
 
     let newLeft = x - tooltipWidth / 2;
@@ -357,13 +363,85 @@ export default function VideoPlayer({
     }
   };
 
+  // Fixed volume hover handling with delay
+  const handleVolumeHover = useCallback((isHovering: boolean) => {
+    if (isHovering) {
+      // Clear any existing timeout
+      clearTimeout(volumeHoverTimeoutRef.current);
+      
+      // Calculate position and show immediately
+      if (volumeButtonRef.current && playerContainerRef.current) {
+        const buttonRect = volumeButtonRef.current.getBoundingClientRect();
+        const containerRect = playerContainerRef.current.getBoundingClientRect();
+        
+        setVolumeSliderPosition({
+          x: buttonRect.left - containerRect.left + buttonRect.width / 2,
+          y: buttonRect.top - containerRect.top - 20
+        });
+      }
+      setIsVolumeHovered(true);
+    } else {
+      // Add delay before hiding
+      volumeHoverTimeoutRef.current = window.setTimeout(() => {
+        setIsVolumeHovered(false);
+      }, 300); // 300ms delay
+    }
+  }, []);
+
+  // Handle volume slider area hover
+  const handleVolumeSliderHover = useCallback((isHovering: boolean) => {
+    if (isHovering) {
+      // Clear hide timeout when hovering over slider
+      clearTimeout(volumeHoverTimeoutRef.current);
+      setIsVolumeHovered(true);
+    } else {
+      // Add delay before hiding when leaving slider
+      volumeHoverTimeoutRef.current = window.setTimeout(() => {
+        setIsVolumeHovered(false);
+      }, 300); // 300ms delay
+    }
+  }, []);
+
+  // Handle settings menu
+  const handleSettingsClick = useCallback(() => {
+    if (settingsButtonRef.current && playerContainerRef.current) {
+      const buttonRect = settingsButtonRef.current.getBoundingClientRect();
+      const containerRect = playerContainerRef.current.getBoundingClientRect();
+      
+      setSettingsPosition({
+        x: buttonRect.left - containerRect.left + buttonRect.width / 2,
+        y: buttonRect.top - containerRect.top - 20
+      });
+    }
+    setIsSettingsOpen(!isSettingsOpen);
+  }, [isSettingsOpen]);
+
+  // Close settings when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        isSettingsOpen &&
+        settingsButtonRef.current &&
+        !settingsButtonRef.current.contains(event.target as Node) &&
+        settingsMenuRef.current &&
+        !settingsMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsSettingsOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isSettingsOpen]);
+
   return (
     <div
       ref={playerContainerRef}
       tabIndex={0}
-      className={`relative w-full h-full overflow-hidden rounded-2xl shadow-lg ${theme === 'dark' ? 'bg-black' : 'bg-gray-100'} focus:outline-none`}
+      className={`relative w-full h-full overflow-hidden rounded-2xl shadow-lg bg-background focus:outline-none`}
       onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
     >
@@ -378,13 +456,144 @@ export default function VideoPlayer({
         onDoubleClick={toggleFullscreen}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
-      >
-      </video>
+      />
+      
       <video ref={previewVideoRef} src={currentQuality} className="absolute select-none -top-[9999px] -left-[9999px]" muted preload="auto" crossOrigin="anonymous" />
+
+      {/* SETTINGS MENU */}
+      {isSettingsOpen && (
+        <div 
+          ref={settingsMenuRef} // Attach the new ref here
+          className="absolute z-[9999] bg-card/10 rounded-2xl backdrop-blur-xl left-1/2 -translate-x-1/2 transition-all duration-300 border border-border/50"
+          style={{
+            left: `${settingsPosition.x}px`,
+            top: `${settingsPosition.y}px`,
+            transform: 'translate(-50%, calc(-100% - 20px))'
+          }}
+        >
+          <div className="space-y-1">
+            {/* Playback Speed */}
+            <div className="px-3 py-2 text-xs font-medium text-muted-background">
+              Playback Speed
+            </div>
+            <div className="grid grid-cols-2 gap-1 p-2">
+              {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((speed) => (
+                <button
+                  key={speed}
+                  onClick={() => {
+                    setPlaybackRate(speed);
+                    setIsSettingsOpen(false);
+                  }}
+                  className={`w-full p-1 text-sm text-left rounded-md transition-colors ${
+                    playbackRate === speed 
+                      ? 'bg-primary text-primary-foreground' 
+                      : 'hover:bg-muted text-foreground'
+                  }`}
+                >
+                  {`${speed}x`}
+                </button>
+              ))}
+            </div>
+            
+            {/* Quality Selection */}
+            {quality.length > 0 && (
+              <>
+                <div className="border-t border-border/50 my-2"></div>
+                <div className="px-3 py-2 text-xs font-medium text-muted-foreground">
+                  Quality
+                </div>
+                <div className="space-y-1">
+                  {quality.map((q) => (
+                    <button
+                      key={q.src}
+                      onClick={() => {
+                        handleQualityChange(q.src);
+                        setIsSettingsOpen(false);
+                      }}
+                      className={`w-full px-3 py-2 text-sm text-left rounded-md transition-colors ${
+                        currentQuality === q.src 
+                          ? 'bg-primary text-primary-foreground' 
+                          : 'hover:bg-muted text-foreground'
+                      }`}
+                    >
+                      {q.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VOLUME SLIDER - NOW WITH PROPER HOVER HANDLING */}
+      {(isVolumeHovered || isVolumeDragging) && (
+        <div 
+          className="absolute z-[9999] bg-card/10 backdrop-blur-xl rounded-lg p-4 transition-all duration-300"
+          style={{
+            left: `${volumeSliderPosition.x}px`,
+            top: `${volumeSliderPosition.y}px`,
+            transform: 'translate(-50%, -80%)'
+          }}
+          onMouseEnter={() => handleVolumeSliderHover(true)}
+          onMouseLeave={() => handleVolumeSliderHover(false)}
+        >
+          <div className="h-3 w-56 flex flex-col items-center justify-center">
+            <div
+              className="relative w-full cursor-pointer h-6"
+              onMouseDown={(e) => {
+                setIsVolumeDragging(true);
+                const rect = e.currentTarget.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const newVolume = (clickX / rect.width) * 2;
+                handleVolumeChange(newVolume);
+              }}
+              onMouseMove={handleVolumeDrag}
+              onMouseUp={() => setIsVolumeDragging(false)}
+            >
+              <div className="absolute top-1/2 -translate-y-1/2 w-full h-1 bg-primary/20 rounded-full">
+                <div
+                  className={`absolute h-[26px] top-1/2 -translate-y-1/2 left-0 rounded-s-sm ${volume > 1 ? 'bg-destructive' : 'bg-primary'}`}
+                  style={{ width: `calc(${(volume / 2) * 100}% - 5px)` }}
+                />
+              </div>
+              <div
+                className="absolute z-20 flex items-center justify-center"
+                style={{
+                  left: `${(volume / 2) * 100}%`,
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)', 
+                  width: '8px',
+                  height: '100%',
+                  pointerEvents: 'none',
+                }}
+              >
+                <div
+                  className="w-1 bg-primary rounded-full shadow-lg"
+                  style={{ height: '27px' }}
+                />
+              </div>
+              <div
+                className="absolute top-1/2 -translate-y-1/2 h-1 bg-muted rounded-full z-10"
+                style={{
+                  left: `calc(${(volume / 2) * 100}% + 8px)`,
+                  right: '0%',
+                }}
+              />
+              {isVolumeDragging && (
+                <div className="absolute bottom-full mb-2 p-1 bg-card text-card-foreground text-xs rounded-md -translate-x-1/2"
+                     style={{ left: `${(volume / 2) * 100}%` }}>
+                  {Math.round(volume * 100)}%
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {isLoading && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-foreground border-t-transparent" />
         </div>
       )}
 
@@ -392,11 +601,10 @@ export default function VideoPlayer({
       <div
         className={`absolute inset-0 flex flex-col justify-between ps-4 pr-4 transition-opacity duration-300 ${isHovered || !playing || isDragging ? 'opacity-100' : 'opacity-0'}`}
       >
-        {/* Top gradient/overlay if needed */}
-        <div className="flex-grow"></div>
+        <div className="flex-grow" />
 
         {/* Control Bar at the bottom */}
-        <div className="w-full bg-opacity-60  rounded-xl p-3 flex flex-col items-center space-x-3 z-50">
+        <div className="w-full rounded-xl p-3 flex flex-col items-center space-x-3 z-50">
           <div className="w-full">
             {/* Progress Bar */}
             <div
@@ -411,76 +619,62 @@ export default function VideoPlayer({
                 <div
                   ref={tooltipRef}
                   draggable={false}
-                  className="select-none absolute bottom-full p-1 bg-black text-white text-xs rounded-xl flex flex-col items-center"
-                  style={{
-                    left: `${tooltipPosition}px`,
-                  }}
+                  className="select-none absolute bottom-full p-1 bg-card text-card-foreground text-xs rounded-xl flex flex-col items-center"
+                  style={{ left: `${tooltipPosition}px` }}
                 >
                   {previewImage && <img draggable={false} src={previewImage} alt="preview" className="select-none rounded-xl w-52 h-auto mb-1" />}
                   {tooltipContent}
                 </div>
               )}
 
-              {/* Track - full width */}
-              <div className="absolute top-1/2 -translate-y-1/2 w-full h-1  bg-opacity-30 rounded-full"></div>
-
-              {/* Progress Bar Left (before thumb) */}
+              <div className="absolute top-1/2 -translate-y-1/2 w-full h-1 bg-opacity-30 rounded-full" />
               <div
-                className="absolute top-1/2 -translate-y-1/2 h-1 bg-white rounded-full z-10"
+                className="absolute top-1/2 -translate-y-1/2 h-1 bg-primary rounded-full z-10"
                 style={{
                   width: duration ? `calc(${(currentTime / duration) * 100}% - 9px)` : '0%',
                 }}
-              ></div>
-              {/* Thumb */}
+              />
               <div
-                className="absolute z-20 flex items-center justify-center"
+                className="absolute z-10 flex items-center justify-center"
                 style={{
                   left: duration ? `${(currentTime / duration) * 100}%` : '0%',
                   top: '50%',
-                  transform: 'translate(-50%, -50%)', // Center the thumb
+                  transform: 'translate(-50%, -50%)',
                   width: '4px',
                   height: '100%',
                   pointerEvents: 'none',
                 }}
               >
                 <div
-                  className="w-2 bg-white rounded-full shadow-lg"
-                  style={{
-                    height: '27px',
-                  }}
-                ></div>
+                  className="w-2 bg-primary rounded-full shadow-lg"
+                  style={{ height: '27px' }}
+                />
               </div>
-
-              {/* Progress Bar Right (after thumb) */}
               <div
-                className="absolute top-1/2 -translate-y-1/2 h-1 bg-gray-400 rounded-full z-10"
+                className="absolute top-1/2 -translate-y-1/2 h-1 bg-gray-500 rounded-full z-10"
                 style={{
                   left: duration ? `calc(${(currentTime / duration) * 100}% + 9px)` : '0%',
                   right: '0%',
                 }}
-              ></div>
+              />
             </div>
           </div>
 
-
           <div className="flex w-full p-3 items-center gap-10">
-
-            {/* Play/Pause Button (small, in control bar) */}
             <button
               onClick={handleVideoPlayback}
-              className={`p-5 w-30 flex justify-center items-center  ${playing ? 'bg-[rgba(255,255,255,0.1)] rounded-3xl text-white' : 'bg-white rounded-full text-black'}`}
+              className={`p-5 w-30 flex justify-center items-center ${playing ? 'bg-card/20 backdrop-blur-xl rounded-3xl' : 'bg-primary rounded-full'}`}
             >
-              <div className="h-6 w-6">
-                {playing ? <PauseIcon /> : <PlayIcon />}
+              <div className="h-6 w-6 text-primary-foreground">
+                {playing ? <PauseIcon fill="white" /> : <PlayIcon fill="black" />}
               </div>
             </button>
 
-            <div className="bg-[rgba(255,255,255,0.1)] p-4 rounded-lg flex items-center">
-
+            <div className="bg-card/20 backdrop-blur-xl p-4 rounded-lg flex items-center">
               <div className="flex items-center gap-4">
                 <button
                   onClick={handleVideoBackword}
-                  className={`flex justify-center items-center rounded-3xl text-white bg-[rgba(255,255,255,0.1)] hover:bg-white hover:text-black`}
+                  className="flex justify-center items-center rounded-3xl text-white hover:bg-primary hover:text-black"
                 >
                   <div className="h-6 w-6">
                     <ArrowUturnLeftIcon />
@@ -488,7 +682,7 @@ export default function VideoPlayer({
                 </button>
                 <button
                   onClick={handleVideoForward}
-                  className={`flex justify-center items-center rounded-3xl text-white bg-[rgba(255,255,255,0.1)] hover:bg-white hover:text-black`}
+                  className="flex justify-center text-white items-center rounded-3xl hover:bg-primary hover:text-black"
                 >
                   <div className="h-6 w-6">
                     <ArrowUturnRightIcon />
@@ -496,142 +690,42 @@ export default function VideoPlayer({
                 </button>
               </div>
 
-              {/* Current Time */}
               <span className="select-none text-white text-sm font-medium ml-2">
                 {formatTime(currentTime)} /
               </span>
-
-              {/* Duration */}
               <span className="select-none text-white text-sm font-medium ml-1">
                 {formatTime(duration)}
               </span>
             </div>
 
-            <div className="flex items-center gap-2 ml-auto p-2 rounded-lg bg-[rgba(255,255,255,0.1)]">
-              {/* Volume Control */}
-              <div 
-                className="relative flex items-center"
-                onMouseEnter={() => setIsVolumeHovered(true)}
-                onMouseLeave={() => setIsVolumeHovered(false)}
+            <div className="flex items-center bg-card/20 backdrop-blur-xl gap-2 ml-auto p-2 rounded-lg">
+              {/* Volume Control - WITH PROPER HOVER HANDLING */}
+              <button 
+                ref={volumeButtonRef}
+                onClick={toggleMute} 
+                className="text-primary-foreground p-2 rounded-lg hover:bg-primary/20 transition-colors"
+                onMouseEnter={() => handleVolumeHover(true)}
+                onMouseLeave={() => handleVolumeHover(false)}
               >
-                <button onClick={toggleMute} className="text-white p-2 rounded-lg bg-[rgba(255,255,255,0.1)] hover:bg-white/10 transition-colors">
-                  <div className="h-6 w-6">
-                    {isMuted || volume === 0 ? <SpeakerXMarkIcon /> : <SpeakerWaveIcon />}
-                  </div>
-                </button>
-                <div 
-                  className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-4 transition-all duration-300 z-30 ${isVolumeHovered || isVolumeDragging ? 'opacity-100 visible' : 'opacity-0 invisible'}`}
-                  onMouseDown={(e) => {
-                    setIsVolumeDragging(true);
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    const clickX = e.clientX - rect.left;
-                    const newVolume = (clickX / rect.width) * 2;
-                    handleVolumeChange(newVolume);
-                  }}
-                  onMouseMove={handleVolumeDrag}
-                  onMouseUp={() => setIsVolumeDragging(false)}
-                  onMouseLeave={() => setIsVolumeDragging(false)}
-                >
-                  <div className="h-16 w-56 rounded-lg p-4 flex flex-col items-center justify-center" style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
-                    <div
-                      className="relative w-full cursor-pointer h-6"
-                      onMouseDown={(e) => {
-                        setIsVolumeDragging(true);
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const newVolume = (clickX / rect.width) * 2;
-                        handleVolumeChange(newVolume);
-                      }}
-                      onMouseMove={handleVolumeDrag}
-                      onMouseUp={() => setIsVolumeDragging(false)}
-                      onMouseLeave={() => setIsVolumeDragging(false)}
-                    >
-                      <div className="absolute top-1/2 -translate-y-1/2 w-full h-1 bg-white/20 rounded-full">
-                        <div
-                          className={`absolute h-[26px] top-1/2 -translate-y-1/2 left-0 rounded-s-sm ${volume > 1 ? 'bg-red-500' : 'bg-white'}`}
-                          style={{ width: `calc(${(volume / 2) * 100}% - 5px)` }}
-                        ></div>
-                      </div>
-                      <div
-                        className="absolute z-20 flex items-center justify-center"
-                        style={{
-                          left: `${(volume / 2) * 100}%`,
-                          top: '50%',
-                          transform: 'translate(-50%, -50%)', 
-                          width: '8px',
-                          height: '100%',
-                          pointerEvents: 'none',
-                        }}
-                      >
-                        <div
-                          className="w-1 bg-white rounded-full shadow-lg"
-                          style={{
-                            height: '27px',
-                          }}
-                        ></div>
-                      </div>
-                      <div
-                        className="absolute top-1/2 -translate-y-1/2 h-1 bg-gray-400 rounded-full z-10"
-                        style={{
-                          left: `calc(${(volume / 2) * 100}% + 8px)`,
-                          right: '0%',
-                        }}
-                      ></div>
-                      {isVolumeDragging && (
-                        <div className="absolute bottom-full mb-2 p-1 bg-black text-white text-xs rounded-md -translate-x-1/2"
-                             style={{ left: `${(volume / 2) * 100}%` }}>
-                          {Math.round(volume * 100)}%
-                        </div>
-                      )}
-                    </div>
-                  </div>
+                <div className="h-6 w-6 text-primary-foreground">
+                  {isMuted || volume === 0 ? <SpeakerXMarkIcon fill="white" /> : <SpeakerWaveIcon fill="white" />}
                 </div>
-              </div>
+              </button>
 
-              {/* Settings Popover */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button className="text-white p-2 rounded-lg bg-[rgba(255,255,255,0.1)] hover:bg-white/10 transition-colors">
-                    <div className="h-6 w-6">
-                      <Cog6ToothIcon />
-                    </div>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent side="top" className="w-auto bg-transparent border-none shadow-none p-0 mb-4 z-[9999]">
-                  <div className="rounded-lg p-2" style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
-                    <div className="grid grid-cols-2 gap-2">
-                      {[0.5, 1, 1.5, 2].map(rate => (
-                        <button
-                          key={rate}
-                          onClick={() => setPlaybackRate(rate)}
-                          className={`w-full text-center text-sm p-2 rounded-md transition-colors ${playbackRate === rate ? 'bg-white/20' : 'text-white hover:bg-white/10'}`}>
-                          {rate}x
-                        </button>
-                      ))}
-                    </div>
-                    {quality.length > 0 && (
-                      <>
-                        <div className="h-px bg-white/10 my-2" />
-                        <div className="flex flex-col gap-1">
-                          {quality.map(q => (
-                            <button
-                              key={q.name}
-                              onClick={() => handleQualityChange(q.src)}
-                              className={`w-full text-left text-sm px-3 py-1 rounded-md transition-colors ${currentQuality === q.src ? 'bg-white/20' : 'text-white hover:bg-white/10'}`}>
-                              {q.name}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
+              {/* Settings and Fullscreen remain the same */}
+              <button 
+                ref={settingsButtonRef}
+                onClick={handleSettingsClick}
+                className="text-primary-foreground p-2 rounded-lg hover:bg-primary/20 transition-colors relative"
+              >
+                <div className="h-6 w-6 text-primary-foreground">
+                  <Cog6ToothIcon fill="white" />
+                </div>
+              </button>
 
-              {/* Fullscreen Button */}
-              <button onClick={toggleFullscreen} className="text-white p-2 rounded-lg bg-[rgba(255,255,255,0.1)] hover:bg-white/10 transition-colors">
-                <div className="h-6 w-6">
-                  {isFullScreen ? <ArrowsPointingInIcon /> : <ArrowsPointingOutIcon />}
+              <button onClick={toggleFullscreen} className="text-primary-foreground p-2 rounded-lg hover:bg-primary/20 transition-colors">
+                <div className="h-6 w-6 text-primary-foreground">
+                  {isFullScreen ? <ArrowsPointingInIcon fill="white" /> : <ArrowsPointingOutIcon fill="white" />}
                 </div>
               </button>
             </div>
@@ -641,10 +735,3 @@ export default function VideoPlayer({
     </div>
   );
 }
-
-
-
-
-
-
-
