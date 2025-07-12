@@ -31,6 +31,6 @@ export function useVideoAudioBoost(
       video.addEventListener("play", resumeAudio, { once: true });
     }
 
-    gainNodeRef.current.gain.value = Math.min(boostLevel, 3);
+    gainNodeRef.current.gain.value = Math.min(boostLevel, 2);
   }, [videoRef.current, boostLevel]);
 }

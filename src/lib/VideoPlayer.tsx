@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { PlayIcon, PauseIcon, SpeakerWaveIcon, SpeakerXMarkIcon, ArrowsPointingOutIcon, ArrowsPointingInIcon, Cog6ToothIcon, ArrowUturnRightIcon, ArrowUturnLeftIcon } from '@heroicons/react/24/solid';
 import { useVideoAudioBoost } from "@/hooks/useVideoAudioBoost";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Slider } from "@/components/ui/slider";
+
 
 interface Quality {
   name: string;
@@ -42,7 +42,7 @@ export default function VideoPlayer({
   const [isHovered, setIsHovered] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isFullScreen, setIsFullScreen] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  
   const [playbackRate, setPlaybackRate] = useState(1);
   const [currentQuality, setCurrentQuality] = useState(quality.length > 0 ? quality[0].src : src);
   const [tooltipContent, setTooltipContent] = useState("");
@@ -50,6 +50,9 @@ export default function VideoPlayer({
   const [showTooltip, setShowTooltip] = useState(false);
   const [previewImage, setPreviewImage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  const [isVolumeHovered, setIsVolumeHovered] = useState(false);
+  const [isVolumeDragging, setIsVolumeDragging] = useState(false);
 
   useVideoAudioBoost(videoRef, volume);
 
@@ -174,13 +177,24 @@ export default function VideoPlayer({
     setIsDragging(false);
   }, []);
 
-  const handleVolumeChange = useCallback((value: number[]) => {
-    const newVolume = value[0];
+  const handleVolumeChange = useCallback((value: number) => {
     if (videoRef.current) {
+      const newVolume = Math.min(Math.max(value, 0), 2);
       setVolume(newVolume);
       setIsMuted(newVolume === 0);
     }
   }, []);
+
+  const handleVolumeDrag = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (isVolumeDragging) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      let newVolume = (clickX / rect.width) * 2;
+      if (newVolume < 0) newVolume = 0;
+      if (newVolume > 2) newVolume = 2;
+      handleVolumeChange(newVolume);
+    }
+  }, [isVolumeDragging, handleVolumeChange]);
 
   const toggleMute = useCallback(() => {
     if (videoRef.current) {
@@ -231,7 +245,7 @@ export default function VideoPlayer({
         break;
       case 'ArrowUp': {
         e.preventDefault();
-        const newVolume = Math.min(video.volume + 0.1, 3);
+        const newVolume = Math.min(video.volume + 0.1, 2);
         video.volume = newVolume;
         setVolume(newVolume);
         break;
@@ -376,13 +390,13 @@ export default function VideoPlayer({
 
       {/* Overlay for controls */}
       <div
-        className={`absolute inset-0 flex flex-col justify-between p-4 transition-opacity duration-300 ${isHovered || !playing || isDragging ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 flex flex-col justify-between ps-4 pr-4 transition-opacity duration-300 ${isHovered || !playing || isDragging ? 'opacity-100' : 'opacity-0'}`}
       >
         {/* Top gradient/overlay if needed */}
         <div className="flex-grow"></div>
 
         {/* Control Bar at the bottom */}
-        <div className="w-full bg-opacity-40 backdrop-blur-md rounded-xl p-3 flex flex-col items-center space-x-3">
+        <div className="w-full bg-opacity-60  rounded-xl p-3 flex flex-col items-center space-x-3 z-50">
           <div className="w-full">
             {/* Progress Bar */}
             <div
@@ -424,7 +438,7 @@ export default function VideoPlayer({
                   left: duration ? `${(currentTime / duration) * 100}%` : '0%',
                   top: '50%',
                   transform: 'translate(-50%, -50%)', // Center the thumb
-                  width: '8px',
+                  width: '4px',
                   height: '100%',
                   pointerEvents: 'none',
                 }}
@@ -454,19 +468,19 @@ export default function VideoPlayer({
             {/* Play/Pause Button (small, in control bar) */}
             <button
               onClick={handleVideoPlayback}
-              className={`p-5 w-30 flex justify-center items-center  rounded-3xl  ${playing ? 'bg-[#131313] text-white' : 'bg-white text-black'}`}
+              className={`p-5 w-30 flex justify-center items-center  ${playing ? 'bg-[rgba(255,255,255,0.1)] rounded-3xl text-white' : 'bg-white rounded-full text-black'}`}
             >
               <div className="h-6 w-6">
                 {playing ? <PauseIcon /> : <PlayIcon />}
               </div>
             </button>
 
-            <div className="bg-[#131313] p-4 rounded-lg flex items-center">
+            <div className="bg-[rgba(255,255,255,0.1)] p-4 rounded-lg flex items-center">
 
               <div className="flex items-center gap-4">
                 <button
                   onClick={handleVideoBackword}
-                  className={`flex justify-center items-center  rounded-3xl  text-white hover:bg-white hover:text-black`}
+                  className={`flex justify-center items-center rounded-3xl text-white bg-[rgba(255,255,255,0.1)] hover:bg-white hover:text-black`}
                 >
                   <div className="h-6 w-6">
                     <ArrowUturnLeftIcon />
@@ -474,7 +488,7 @@ export default function VideoPlayer({
                 </button>
                 <button
                   onClick={handleVideoForward}
-                  className={` flex justify-center items-center  rounded-3xl  text-white hover:bg-white hover:text-black`}
+                  className={`flex justify-center items-center rounded-3xl text-white bg-[rgba(255,255,255,0.1)] hover:bg-white hover:text-black`}
                 >
                   <div className="h-6 w-6">
                     <ArrowUturnRightIcon />
@@ -493,37 +507,55 @@ export default function VideoPlayer({
               </span>
             </div>
 
-            <div className="flex items-center gap-2 ml-auto p-2 rounded-lg" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }}>
+            <div className="flex items-center gap-2 ml-auto p-2 rounded-lg bg-[rgba(255,255,255,0.1)]">
               {/* Volume Control */}
-              <Popover>
-                <PopoverTrigger asChild>
-                  <button onClick={toggleMute} className="text-white p-2 rounded-lg hover:bg-white/10 transition-colors">
-                    <div className="h-6 w-6">
-                      {isMuted || volume === 0 ? <SpeakerXMarkIcon /> : <SpeakerWaveIcon />}
-                    </div>
-                  </button>
-                </PopoverTrigger>
-                <PopoverContent side="top" className="w-auto bg-transparent border-none shadow-none mb-2">
-                  <div className="h-16 w-40 bg-[#131313] rounded-lg p-4 flex items-center justify-center">
+              <div 
+                className="relative flex items-center"
+                onMouseEnter={() => setIsVolumeHovered(true)}
+                onMouseLeave={() => setIsVolumeHovered(false)}
+              >
+                <button onClick={toggleMute} className="text-white p-2 rounded-lg bg-[rgba(255,255,255,0.1)] hover:bg-white/10 transition-colors">
+                  <div className="h-6 w-6">
+                    {isMuted || volume === 0 ? <SpeakerXMarkIcon /> : <SpeakerWaveIcon />}
+                  </div>
+                </button>
+                <div 
+                  className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-4 transition-all duration-300 z-30 ${isVolumeHovered || isVolumeDragging ? 'opacity-100 visible' : 'opacity-0 invisible'}`}
+                  onMouseDown={(e) => {
+                    setIsVolumeDragging(true);
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const clickX = e.clientX - rect.left;
+                    const newVolume = (clickX / rect.width) * 2;
+                    handleVolumeChange(newVolume);
+                  }}
+                  onMouseMove={handleVolumeDrag}
+                  onMouseUp={() => setIsVolumeDragging(false)}
+                  onMouseLeave={() => setIsVolumeDragging(false)}
+                >
+                  <div className="h-16 w-56 rounded-lg p-4 flex flex-col items-center justify-center" style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
                     <div
                       className="relative w-full cursor-pointer h-6"
                       onMouseDown={(e) => {
+                        setIsVolumeDragging(true);
                         const rect = e.currentTarget.getBoundingClientRect();
                         const clickX = e.clientX - rect.left;
-                        const newVolume = (clickX / rect.width) * 3;
-                        handleVolumeChange([newVolume]);
+                        const newVolume = (clickX / rect.width) * 2;
+                        handleVolumeChange(newVolume);
                       }}
+                      onMouseMove={handleVolumeDrag}
+                      onMouseUp={() => setIsVolumeDragging(false)}
+                      onMouseLeave={() => setIsVolumeDragging(false)}
                     >
                       <div className="absolute top-1/2 -translate-y-1/2 w-full h-1 bg-white/20 rounded-full">
                         <div
-                          className="absolute top-0 left-0 h-full bg-white rounded-full"
-                          style={{ width: `calc(${(volume / 3) * 100}% - 8px)` }}
+                          className={`absolute h-[26px] top-1/2 -translate-y-1/2 left-0 rounded-s-sm ${volume > 1 ? 'bg-red-500' : 'bg-white'}`}
+                          style={{ width: `calc(${(volume / 2) * 100}% - 5px)` }}
                         ></div>
                       </div>
                       <div
                         className="absolute z-20 flex items-center justify-center"
                         style={{
-                          left: `${(volume / 3) * 100}%`,
+                          left: `${(volume / 2) * 100}%`,
                           top: '50%',
                           transform: 'translate(-50%, -50%)', 
                           width: '8px',
@@ -532,7 +564,7 @@ export default function VideoPlayer({
                         }}
                       >
                         <div
-                          className="w-2 bg-white rounded-full shadow-lg"
+                          className="w-1 bg-white rounded-full shadow-lg"
                           style={{
                             height: '27px',
                           }}
@@ -541,26 +573,32 @@ export default function VideoPlayer({
                       <div
                         className="absolute top-1/2 -translate-y-1/2 h-1 bg-gray-400 rounded-full z-10"
                         style={{
-                          left: `calc(${(volume / 3) * 100}% + 8px)`,
+                          left: `calc(${(volume / 2) * 100}% + 8px)`,
                           right: '0%',
                         }}
                       ></div>
+                      {isVolumeDragging && (
+                        <div className="absolute bottom-full mb-2 p-1 bg-black text-white text-xs rounded-md -translate-x-1/2"
+                             style={{ left: `${(volume / 2) * 100}%` }}>
+                          {Math.round(volume * 100)}%
+                        </div>
+                      )}
                     </div>
                   </div>
-                </PopoverContent>
-              </Popover>
+                </div>
+              </div>
 
               {/* Settings Popover */}
               <Popover>
                 <PopoverTrigger asChild>
-                  <button className="text-white p-2 rounded-lg hover:bg-white/10 transition-colors">
+                  <button className="text-white p-2 rounded-lg bg-[rgba(255,255,255,0.1)] hover:bg-white/10 transition-colors">
                     <div className="h-6 w-6">
                       <Cog6ToothIcon />
                     </div>
                   </button>
                 </PopoverTrigger>
-                <PopoverContent side="top" className="w-auto bg-transparent border-none shadow-none p-0 mb-2">
-                  <div className="bg-[#131313] rounded-lg p-2">
+                <PopoverContent side="top" className="w-auto bg-transparent border-none shadow-none p-0 mb-4 z-[9999]">
+                  <div className="rounded-lg p-2" style={{ backgroundColor: 'rgba(255, 255, 255, 0.2)' }}>
                     <div className="grid grid-cols-2 gap-2">
                       {[0.5, 1, 1.5, 2].map(rate => (
                         <button
@@ -591,7 +629,7 @@ export default function VideoPlayer({
               </Popover>
 
               {/* Fullscreen Button */}
-              <button onClick={toggleFullscreen} className="text-white p-2 rounded-lg hover:bg-white/10 transition-colors">
+              <button onClick={toggleFullscreen} className="text-white p-2 rounded-lg bg-[rgba(255,255,255,0.1)] hover:bg-white/10 transition-colors">
                 <div className="h-6 w-6">
                   {isFullScreen ? <ArrowsPointingInIcon /> : <ArrowsPointingOutIcon />}
                 </div>
