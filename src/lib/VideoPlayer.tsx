@@ -35,7 +35,6 @@ export default function VideoPlayer({
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
-  const [buffered, setBuffered] = useState(0);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(muted);
   const [isHovered, setIsHovered] = useState(false);
@@ -48,15 +47,9 @@ export default function VideoPlayer({
   const [tooltipPosition, setTooltipPosition] = useState(0);
   const [showTooltip, setShowTooltip] = useState(false);
   const [previewImage, setPreviewImage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   useVideoAudioBoost(videoRef, volume);
-
-  const handleProgress = useCallback(() => {
-    const video = videoRef.current;
-    if (video && video.buffered.length > 0) {
-      setBuffered(video.buffered.end(video.buffered.length - 1));
-    }
-  }, []);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -81,6 +74,8 @@ export default function VideoPlayer({
 
     const handlePlay = () => setPlaying(true);
     const handlePause = () => setPlaying(false);
+    const handleWaiting = () => setIsLoading(true);
+    const handlePlaying = () => setIsLoading(false);
 
     const handleFullScreenChange = () => {
       setIsFullScreen(!!document.fullscreenElement);
@@ -91,7 +86,8 @@ export default function VideoPlayer({
     video.addEventListener('volumechange', handleVolumeChange);
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
-    video.addEventListener('progress', handleProgress);
+    video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('playing', handlePlaying);
     document.addEventListener('fullscreenchange', handleFullScreenChange);
 
     return () => {
@@ -100,10 +96,11 @@ export default function VideoPlayer({
       video.removeEventListener('volumechange', handleVolumeChange);
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
-      video.removeEventListener('progress', handleProgress);
+      video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('playing', handlePlaying);
       document.removeEventListener('fullscreenchange', handleFullScreenChange);
     };
-  }, [volume, isMuted, isDragging, handleProgress]);
+  }, [volume, isMuted, isDragging]);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -360,14 +357,20 @@ export default function VideoPlayer({
         poster={poster}
         autoPlay={autoPlay}
         muted={muted}
-        className={`w-full h-full object-cover rounded-2xl ${isHovered ? `opacity-70` : `opacity-100`}`}
+        className={`w-full h-full object-cover rounded-2xl ${isHovered ? `opacity-70` : `opacity-100`} ${isLoading ? '' : ''}`}
         onClick={handleVideoPlayback}
         onDoubleClick={toggleFullscreen}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
       >
       </video>
-      <video ref={previewVideoRef} src={src} className="absolute select-none -top-[9999px] -left-[9999px]" muted preload="auto" />
+      <video ref={previewVideoRef} src={currentQuality} className="absolute select-none -top-[9999px] -left-[9999px]" muted preload="auto" crossOrigin="anonymous" />
+
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent"></div>
+        </div>
+      )}
 
       {/* Overlay for controls */}
       <div
@@ -405,26 +408,16 @@ export default function VideoPlayer({
               {/* Track - full width */}
               <div className="absolute top-1/2 -translate-y-1/2 w-full h-1  bg-opacity-30 rounded-full"></div>
 
-              {/* Buffered Bar */}
-              <div
-                className="absolute top-1/2 -translate-y-1/2 h-1 bg-white bg-opacity-40 rounded-full"
-                style={{
-                  width: duration ? `${(buffered / duration) * 100}%` : '0%',
-                  transition: 'width 0.2s linear',
-                }}
-              ></div>
-
               {/* Progress Bar Left (before thumb) */}
               <div
-                className="absolute top-1/2 -translate-y-1/2 h-1 bg-white bg-opacity-60 rounded-full"
+                className="absolute top-1/2 -translate-y-1/2 h-1 bg-white rounded-full z-10"
                 style={{
-                  width: duration ? `calc(${(currentTime / duration) * 100}% - 14px)` : '0%', // 14px = half thumb width (4px) + gap (10px)
+                  width: duration ? `calc(${(currentTime / duration) * 100}% - 9px)` : '0%',
                 }}
               ></div>
-              <div style={{ width: '4px' }}></div>
               {/* Thumb */}
               <div
-                className="absolute z-10 flex items-center justify-center"
+                className="absolute z-20 flex items-center justify-center"
                 style={{
                   left: duration ? `${(currentTime / duration) * 100}%` : '0%',
                   top: '50%',
@@ -435,19 +428,18 @@ export default function VideoPlayer({
                 }}
               >
                 <div
-                  className="w-1 bg-white rounded-full shadow-lg"
+                  className="w-2 bg-white rounded-full shadow-lg"
                   style={{
                     height: '27px',
                   }}
                 ></div>
               </div>
-              <div style={{ width: '4px' }}></div>
 
               {/* Progress Bar Right (after thumb) */}
               <div
-                className="absolute top-1/2 -translate-y-1/2 h-1 bg-white bg-opacity-30 rounded-full"
+                className="absolute top-1/2 -translate-y-1/2 h-1 bg-gray-400 rounded-full z-10"
                 style={{
-                  left: duration ? `calc(${(currentTime / duration) * 100}% + 14px)` : '0%', // 14px = half thumb width (4px) + gap (10px)
+                  left: duration ? `calc(${(currentTime / duration) * 100}% + 9px)` : '0%',
                   right: '0%',
                 }}
               ></div>
